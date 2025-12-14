@@ -99,13 +99,13 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
 
             if err != nil {
                 log.Printf("Cerebras API Error: %v", err)
-                // REPLY: Error message
+                // REPLY: Error message (ONLY ONE SEND IN ERROR BLOCK)
                 s.ChannelMessageSendReply(m.ChannelID, "Sorry, I ran into an issue connecting to the AI. Check the logs.", createReply(m))
                 return
             }
 
             // 6. Send the final AI response (ONLY ONCE)
-            // REPLY: The final AI answer
+            // REPLY: The final AI answer (ONLY ONE SEND IN SUCCESS BLOCK)
             s.ChannelMessageSendReply(m.ChannelID, aiResponseContent, createReply(m))
 
             // 7. Update and Save conversation history (only the user/assistant messages)
