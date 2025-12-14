@@ -1,0 +1,15 @@
+# Dependencies
+vendor/
+
+# Executables and build output
+*.exe
+*.o
+*.so
+discord-ai-bot # Your compiled executable name
+
+# Environment variables (security!)
+.env
+
+# Database/Memory files (security and unnecessary upload)
+*.db
+bot_memory.db # The specific file name from your configuration
