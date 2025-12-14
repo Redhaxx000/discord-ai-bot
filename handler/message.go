@@ -3,7 +3,6 @@ package handler
 import (
     "log"
     "strings"
-    "strconv" // NEW: Needed to parse activity type from string
     "time"
     "fmt" 
 
@@ -14,7 +13,7 @@ import (
 )
 
 const commandPrefix = "!setpersonality"
-const statusCommandPrefix = "!setstatus" // NEW: Status command
+const statusCommandPrefix = "!setstatus"
 
 // Utility function to create a message reference for replies
 func createReply(m *discordgo.MessageCreate) *discordgo.MessageReference {
@@ -50,14 +49,13 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             return
         }
 
-        // 2. Status Command (NEW LOGIC)
+        // 2. Status Command
         if strings.HasPrefix(m.Content, statusCommandPrefix) {
             
             // Expected format: !setstatus <status> <type> <text...>
             args := strings.Fields(strings.TrimPrefix(m.Content, statusCommandPrefix))
             
             if len(args) < 3 {
-                // Not enough arguments
                 s.ChannelMessageSendReply(m.ChannelID, 
                     fmt.Sprintf("❌ Invalid format. Usage: `%s <status> <type> <text>`. Status: `online`/`idle`/`dnd`. Type: `playing`/`watching`/`listening`/`streaming`.", statusCommandPrefix), 
                     createReply(m))
@@ -107,7 +105,7 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
         // --- END COMMAND HANDLING ---
 
 
-        // --- PING/AI HANDLING (Remains the same as the last corrected version) ---
+        // --- PING/AI HANDLING ---
         
         // Check if the bot was explicitly pinged (mentioned)
         isPinged := false
