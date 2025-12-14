@@ -4,7 +4,7 @@ import (
     "log"
     "strings"
     "time"
-    "fmt" // New import for command responses
+    "fmt" 
 
     "discord-ai-bot/ai"
     "discord-ai-bot/db"
@@ -53,7 +53,6 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
 
         if isPinged {
             // 1. Clean the message content (remove the bot's mention)
-            // ... (Message cleaning logic remains the same) ...
             cleanMessage := strings.TrimSpace(strings.Replace(m.Content, "<@"+mentionID+">", "", 1))
             
             if cleanMessage == "" {
@@ -66,18 +65,21 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             startTime := time.Now()
 
             // 3. Load GLOBAL Personality and Conversation History
-            personality := db.LoadPersonality() // <-- NEW: Load the personality
+            personality := db.LoadPersonality()
             history := db.LoadGlobalHistory() 
 
             // 4. Construct the full history for the AI, starting with the system prompt
+            // Define userMessage here for use in Step 7
+            userMessage := ai.Message{Role: "user", Content: cleanMessage} 
+            
             fullHistory := []ai.Message{
-                {Role: "system", Content: personality}, // <-- NEW: Prepend the system prompt
+                {Role: "system", Content: personality},
             }
-            fullHistory = append(fullHistory, history...) // Append previous conversation history
-            fullHistory = append(fullHistory, ai.Message{Role: "user", Content: cleanMessage}) // Append new user message
+            fullHistory = append(fullHistory, history...) 
+            fullHistory = append(fullHistory, userMessage) // Use the defined userMessage
 
             // 5. Call Cerebras API (using fullHistory)
-            aiResponseContent, err := ai.GetCerebrasResponse(fullHistory) // <-- Updated argument
+            aiResponseContent, err := ai.GetCerebrasResponse(fullHistory) 
             
             // ... (Timing and error handling remains the same) ...
             if elapsed := time.Since(startTime); elapsed < time.Second {
@@ -96,8 +98,8 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             // 7. Update and Save conversation history (only the user/assistant messages)
             assistantMessage := ai.Message{Role: "assistant", Content: aiResponseContent}
             
-            // NOTE: We save only the user and assistant messages for history, NOT the system message.
-            finalHistory := append(history, userMessage, assistantMessage)
+            // FIX: Append the previously defined userMessage and the new assistantMessage
+            finalHistory := append(history, userMessage, assistantMessage) 
 
             db.SaveGlobalHistory(finalHistory)
         }
