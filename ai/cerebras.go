@@ -35,8 +35,8 @@ func GetCerebrasResponse(history []Message) (string, error) {
     }
 
     // The model and API endpoint may need updating based on Cerebras's current documentation
-    url := "https://api.cerebras.com/v1/chat/completions" 
-    model := "cerebras-70b" // Example model
+    url := "https://api.cerebras.com/v1/completions" 
+    model := "llama-3.3-70b" // Example model
 
     reqPayload := CerebrasRequest{
         Model:    model,
