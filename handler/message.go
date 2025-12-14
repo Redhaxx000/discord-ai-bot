@@ -3,6 +3,7 @@ package handler
 import (
     "log"
     "strings"
+    "strconv" // NEW: Needed to parse activity type from string
     "time"
     "fmt" 
 
@@ -13,6 +14,7 @@ import (
 )
 
 const commandPrefix = "!setpersonality"
+const statusCommandPrefix = "!setstatus" // NEW: Status command
 
 // Utility function to create a message reference for replies
 func createReply(m *discordgo.MessageCreate) *discordgo.MessageReference {
@@ -33,25 +35,80 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
         }
 
         // --- COMMAND HANDLING ---
+
+        // 1. Personality Command
         if strings.HasPrefix(m.Content, commandPrefix) {
             newPersonality := strings.TrimSpace(strings.TrimPrefix(m.Content, commandPrefix))
             
             if newPersonality == "" {
-                // REPLY: Command usage error
                 s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("Please provide a new personality description after the command, e.g., `%s You are a sarcastic pirate.`", commandPrefix), createReply(m))
                 return
             }
 
             db.SavePersonality(newPersonality)
-            // REPLY: Command success message
             s.ChannelMessageSendReply(m.ChannelID, "✅ **Personality Updated!** The bot is now defined as: ```"+newPersonality+"```", createReply(m))
+            return
+        }
+
+        // 2. Status Command (NEW LOGIC)
+        if strings.HasPrefix(m.Content, statusCommandPrefix) {
+            
+            // Expected format: !setstatus <status> <type> <text...>
+            args := strings.Fields(strings.TrimPrefix(m.Content, statusCommandPrefix))
+            
+            if len(args) < 3 {
+                // Not enough arguments
+                s.ChannelMessageSendReply(m.ChannelID, 
+                    fmt.Sprintf("❌ Invalid format. Usage: `%s <status> <type> <text>`. Status: `online`/`idle`/`dnd`. Type: `playing`/`watching`/`listening`/`streaming`.", statusCommandPrefix), 
+                    createReply(m))
+                return
+            }
+
+            status := args[0]
+            activityTypeStr := strings.ToLower(args[1])
+            activityText := strings.Join(args[2:], " ")
+            
+            // Map string type to discordgo constant
+            var activityType discordgo.ActivityType
+            switch activityTypeStr {
+            case "playing":
+                activityType = discordgo.ActivityTypeGame
+            case "streaming":
+                activityType = discordgo.ActivityTypeStreaming
+            case "listening":
+                activityType = discordgo.ActivityTypeListening
+            case "watching":
+                activityType = discordgo.ActivityTypeWatching
+            default:
+                s.ChannelMessageSendReply(m.ChannelID, "❌ Invalid activity type. Use `playing`, `streaming`, `listening`, or `watching`.", createReply(m))
+                return
+            }
+
+            // Set the new status
+            err := s.UpdateStatusComplex(discordgo.UpdateStatusData{
+                Status: status,
+                Activities: []*discordgo.Activity{
+                    {
+                        Name: activityText,
+                        Type: activityType,
+                    },
+                },
+            })
+
+            if err != nil {
+                log.Printf("Error setting bot status: %v", err)
+                s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("❌ Failed to set status: %v", err), createReply(m))
+                return
+            }
+
+            s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("✅ **Status Updated!** Status: `%s`, Activity: `%s %s`", status, strings.Title(activityTypeStr), activityText), createReply(m))
             return
         }
         // --- END COMMAND HANDLING ---
 
 
-        // --- PING/AI HANDLING ---
-
+        // --- PING/AI HANDLING (Remains the same as the last corrected version) ---
+        
         // Check if the bot was explicitly pinged (mentioned)
         isPinged := false
         mentionID := s.State.User.ID
@@ -63,11 +120,10 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
         }
 
         if isPinged {
-            // 1. Clean the message content (remove the bot's mention)
+            // 1. Clean the message content
             cleanMessage := strings.TrimSpace(strings.Replace(m.Content, "<@"+mentionID+">", "", 1))
             
             if cleanMessage == "" {
-                // REPLY: No message content
                 s.ChannelMessageSendReply(m.ChannelID, "Hello! Ping me with a question and I'll remember the context.", createReply(m))
                 return
             }
@@ -80,7 +136,7 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             personality := db.LoadPersonality()
             history := db.LoadGlobalHistory() 
 
-            // 4. Construct the full history for the AI, starting with the system prompt
+            // 4. Construct the full history for the AI
             userMessage := ai.Message{Role: "user", Content: cleanMessage} 
             
             fullHistory := []ai.Message{
@@ -89,7 +145,7 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             fullHistory = append(fullHistory, history...) 
             fullHistory = append(fullHistory, userMessage)
 
-            // 5. Call Cerebras API (using fullHistory)
+            // 5. Call Cerebras API 
             aiResponseContent, err := ai.GetCerebrasResponse(fullHistory) 
             
             // Timing delay
@@ -99,16 +155,14 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
 
             if err != nil {
                 log.Printf("Cerebras API Error: %v", err)
-                // REPLY: Error message (ONLY ONE SEND IN ERROR BLOCK)
                 s.ChannelMessageSendReply(m.ChannelID, "Sorry, I ran into an issue connecting to the AI. Check the logs.", createReply(m))
                 return
             }
 
             // 6. Send the final AI response (ONLY ONCE)
-            // REPLY: The final AI answer (ONLY ONE SEND IN SUCCESS BLOCK)
             s.ChannelMessageSendReply(m.ChannelID, aiResponseContent, createReply(m))
 
-            // 7. Update and Save conversation history (only the user/assistant messages)
+            // 7. Update and Save conversation history
             assistantMessage := ai.Message{Role: "assistant", Content: aiResponseContent}
             
             finalHistory := append(history, userMessage, assistantMessage) 
