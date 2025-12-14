@@ -14,6 +14,15 @@ import (
 
 const commandPrefix = "!setpersonality"
 
+// Utility function to create a message reference for replies
+func createReply(m *discordgo.MessageCreate) *discordgo.MessageReference {
+    return &discordgo.MessageReference{
+        MessageID: m.ID,
+        ChannelID: m.ChannelID,
+        GuildID: m.GuildID,
+    }
+}
+
 // MessageCreate returns a function that handles Discord messages.
 func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.MessageCreate) {
     // The inner function is the actual handler
@@ -28,12 +37,14 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             newPersonality := strings.TrimSpace(strings.TrimPrefix(m.Content, commandPrefix))
             
             if newPersonality == "" {
-                s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Please provide a new personality description after the command, e.g., `%s You are a sarcastic pirate.`", commandPrefix))
+                // REPLY: Command usage error
+                s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("Please provide a new personality description after the command, e.g., `%s You are a sarcastic pirate.`", commandPrefix), createReply(m))
                 return
             }
 
             db.SavePersonality(newPersonality)
-            s.ChannelMessageSend(m.ChannelID, "✅ **Personality Updated!** The bot is now defined as: ```"+newPersonality+"```")
+            // REPLY: Command success message
+            s.ChannelMessageSendReply(m.ChannelID, "✅ **Personality Updated!** The bot is now defined as: ```"+newPersonality+"```", createReply(m))
             return
         }
         // --- END COMMAND HANDLING ---
@@ -56,7 +67,8 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             cleanMessage := strings.TrimSpace(strings.Replace(m.Content, "<@"+mentionID+">", "", 1))
             
             if cleanMessage == "" {
-                s.ChannelMessageSend(m.ChannelID, "Hello! Ping me with a question and I'll remember the context.")
+                // REPLY: No message content
+                s.ChannelMessageSendReply(m.ChannelID, "Hello! Ping me with a question and I'll remember the context.", createReply(m))
                 return
             }
 
@@ -87,12 +99,14 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
 
             if err != nil {
                 log.Printf("Cerebras API Error: %v", err)
-                s.ChannelMessageSend(m.ChannelID, "Sorry, I ran into an issue connecting to the AI. Check the logs.")
+                // REPLY: Error message
+                s.ChannelMessageSendReply(m.ChannelID, "Sorry, I ran into an issue connecting to the AI. Check the logs.", createReply(m))
                 return
             }
 
             // 6. Send the final AI response (ONLY ONCE)
-            s.ChannelMessageSend(m.ChannelID, aiResponseContent)
+            // REPLY: The final AI answer
+            s.ChannelMessageSendReply(m.ChannelID, aiResponseContent, createReply(m))
 
             // 7. Update and Save conversation history (only the user/assistant messages)
             assistantMessage := ai.Message{Role: "assistant", Content: aiResponseContent}
