@@ -69,19 +69,18 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
             history := db.LoadGlobalHistory() 
 
             // 4. Construct the full history for the AI, starting with the system prompt
-            // Define userMessage here for use in Step 7
             userMessage := ai.Message{Role: "user", Content: cleanMessage} 
             
             fullHistory := []ai.Message{
                 {Role: "system", Content: personality},
             }
             fullHistory = append(fullHistory, history...) 
-            fullHistory = append(fullHistory, userMessage) // Use the defined userMessage
+            fullHistory = append(fullHistory, userMessage)
 
             // 5. Call Cerebras API (using fullHistory)
             aiResponseContent, err := ai.GetCerebrasResponse(fullHistory) 
             
-            // ... (Timing and error handling remains the same) ...
+            // Timing delay
             if elapsed := time.Since(startTime); elapsed < time.Second {
                 time.Sleep(time.Second - elapsed)
             }
@@ -92,13 +91,12 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
                 return
             }
 
-            // 6. Send the final AI response
+            // 6. Send the final AI response (ONLY ONCE)
             s.ChannelMessageSend(m.ChannelID, aiResponseContent)
 
             // 7. Update and Save conversation history (only the user/assistant messages)
             assistantMessage := ai.Message{Role: "assistant", Content: aiResponseContent}
             
-            // FIX: Append the previously defined userMessage and the new assistantMessage
             finalHistory := append(history, userMessage, assistantMessage) 
 
             db.SaveGlobalHistory(finalHistory)
