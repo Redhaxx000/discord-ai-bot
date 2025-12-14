@@ -3,6 +3,7 @@ package handler
 import (
     "log"
     "strings"
+    "time" // Needed for the typing indicator duration
 
     "discord-ai-bot/ai"
     "discord-ai-bot/db"
@@ -38,33 +39,39 @@ func MessageCreate(s *discordgo.Session) func(*discordgo.Session, *discordgo.Mes
                 return
             }
 
-            // 2. Load GLOBAL Conversation History
+            // 2. Start the Discord Typing Indicator
+            // This tells Discord the bot is "typing" while it waits for the AI.
+            s.ChannelTyping(m.ChannelID)
+            
+            // OPTIONAL: Keep the indicator running for a minimum time if the AI is super fast.
+            startTime := time.Now()
+
+            // 3. Load GLOBAL Conversation History
             history := db.LoadGlobalHistory() 
 
-            // 3. Add the current user message to the history
+            // 4. Add the current user message to the history
             userMessage := ai.Message{Role: "user", Content: cleanMessage}
             newHistory := append(history, userMessage)
 
-            // OPTIONAL: Limit history size to prevent running out of context and hitting rate limits
-            // if len(newHistory) > 10 { // e.g., keep the last 10 messages
-            //     newHistory = newHistory[len(newHistory)-10:]
-            // }
-
-            // 4. Call Cerebras API
-            s.ChannelMessageSend(m.ChannelID, "*Thinking...*")
+            // 5. Call Cerebras API
             aiResponseContent, err := ai.GetCerebrasResponse(newHistory)
             
+            // Ensure typing indicator runs for at least 1 second if the response was instant
+            if elapsed := time.Since(startTime); elapsed < time.Second {
+                time.Sleep(time.Second - elapsed)
+            }
+            // Note: The typing indicator usually stops automatically when a message is sent.
+
             if err != nil {
                 log.Printf("Cerebras API Error: %v", err)
                 s.ChannelMessageSend(m.ChannelID, "Sorry, I ran into an issue connecting to the AI. Check the logs.")
                 return
             }
 
-            // 5. Send the AI response to the channel
-            s.ChannelMessageEdit(m.ChannelID, m.ID, aiResponseContent) // Edit the "Thinking..." message
+            // 6. Send the final AI response to the channel (No "Thinking..." message needed)
             s.ChannelMessageSend(m.ChannelID, aiResponseContent)
 
-            // 6. Add the AI response to the history and save (GLOBAL)
+            // 7. Add the AI response to the history and save (GLOBAL)
             assistantMessage := ai.Message{Role: "assistant", Content: aiResponseContent}
             finalHistory := append(newHistory, assistantMessage)
 
