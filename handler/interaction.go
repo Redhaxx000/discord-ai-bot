@@ -47,7 +47,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		// 2. Send the actual config menu as a FOLLOWUP message.
-		// CRITICAL FIX: Explicitly setting Emoji: nil on all buttons to fix the persistent HTTP 400 "Invalid emoji" error.
+		// CRITICAL FIX: Setting Emoji: discordgo.ComponentEmoji{} (empty struct) to fix the Go compiler error and the Discord HTTP 400 error.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "**RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
 			Components: []discordgo.MessageComponent{
@@ -58,21 +58,21 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 							CustomID: "button_general_status",
 							Label:    "General Status & Activity",
 							Style:    discordgo.PrimaryButton,
-							Emoji:    nil, // Explicitly set to nil
+							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
 						},
 						// Button 2: Images and Streaming Link
 						discordgo.Button{
 							CustomID: "button_assets",
 							Label:    "Images and Streaming Link",
 							Style:    discordgo.SecondaryButton,
-							Emoji:    nil, // Explicitly set to nil
+							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
 						},
 						// Button 3: Apply All Changes
 						discordgo.Button{
 							CustomID: "button_apply_status",
 							Label:    "Apply All Changes",
 							Style:    discordgo.SuccessButton,
-							Emoji:    nil, // Explicitly set to nil
+							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
 						},
 					},
 				},
