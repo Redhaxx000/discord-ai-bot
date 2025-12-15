@@ -3,7 +3,6 @@ package handler
 import (
     "log"
     "strings"
-    "time" // Added for Timestamp logic (will need to be parsed from the modal)
 
     "discord-ai-bot/db"
 
@@ -11,7 +10,14 @@ import (
 )
 
 // InteractionCreate handles all slash commands and modal submissions
-// ... (InteractionCreate and handleCommand remain the same) ...
+func InteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    switch i.Type {
+    case discordgo.InteractionApplicationCommand:
+        handleCommand(s, i)
+    case discordgo.InteractionModalSubmit:
+        handleModalSubmit(s, i)
+    }
+}
 
 // 1. Handle the Slash Command -> Open the Modal (UI)
 func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -39,7 +45,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             },
                         },
                     },
-                    // Row 2: Custom Status Message (New)
+                    // Row 2: Custom Status Message
                     discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
@@ -78,7 +84,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             },
                         },
                     },
-                     // Row 5: RPC Details and State (Combined into one row)
+                     // Row 5: RPC Details
                      discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
@@ -91,10 +97,6 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             },
                         },
                     },
-                    // Note: RPC State, URL, and Assets will be assumed to be set via subsequent modals 
-                    // or for simplicity, we will merge the most common asset field into the main modal
-                    // as done previously. Due to Discord's 5-row limit on Modals, we must be selective.
-                    // We will keep the LargeImage Asset key as it's the most impactful.
                 },
             },
         })
@@ -104,7 +106,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
     
     // ... (rest of handleCommand for personality) ...
     case "personality":
-        // ... (personality modal logic remains the same) ...
+        // Create the Modal for Personality
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseModal,
             Data: &discordgo.InteractionResponseData{
@@ -134,15 +136,13 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
     data := i.ModalSubmitData()
 
     if data.CustomID == "config_modal" {
-        // Extract Data (NOTE: Indexing is based on the Modal components above)
+        // Extract Data (Indexing is based on the Modal components above)
         statusStr := strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
         customStatusText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         typeStr := strings.ToLower(data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
         activityText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         detailsText := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-        // Note: Asset key is removed from the modal to make room for new fields.
-        // We will keep loading the LAST saved assets.
-
+        
         // Logic to Map Strings to Discord Types
         var activityType discordgo.ActivityType
         switch typeStr {
@@ -154,24 +154,22 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         default: activityType = discordgo.ActivityTypeGame
         }
         
-        // Load existing status to preserve other non-editable fields (like Assets)
+        // Load existing status to preserve Assets and URL
         currentStatus := db.LoadStatus()
         var currentActivity *discordgo.Activity
         if currentStatus != nil && len(currentStatus.Activities) > 0 {
             currentActivity = currentStatus.Activities[0]
         }
         
-        // Define the Activity
+        // Define the Rich Presence Activity
         activity := discordgo.Activity{
             Name:    activityText,
             Type:    activityType,
-            Details: detailsText, // New
-            // State: is left out for simplicity but can be added back if needed
+            Details: detailsText,
         }
         
-        // Preserve existing Assets and URL if the activity name/type hasn't changed drastically
+        // Preserve existing Assets and URL if previously set
         if currentActivity != nil {
-            // Only update Assets/URL if they were previously set.
             activity.Assets = currentActivity.Assets 
             activity.URL = currentActivity.URL
         }
@@ -179,13 +177,10 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         // Define the final status update
         newData := discordgo.UpdateStatusData{
             Status: statusStr,
-            // If the user set a custom status, we send *two* activities.
-            // Discord displays the first non-nil activity. For custom status,
-            // it must be ActivityTypeCustom.
             Activities: []*discordgo.Activity{}, 
         }
 
-        // Add Custom Status if provided
+        // 1. Add Custom Status if provided (ActivityTypeCustom must be first if present)
         if customStatusText != "" {
             newData.Activities = append(newData.Activities, &discordgo.Activity{
                 Name: customStatusText,
@@ -193,7 +188,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
             })
         }
 
-        // Add the main Rich Presence Activity
+        // 2. Add the main Rich Presence Activity
         newData.Activities = append(newData.Activities, &activity)
 
 
