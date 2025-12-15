@@ -14,57 +14,65 @@ import (
 )
 
 func main() {
-    // 1. Load Environment Variables from .env file (for local testing)
     if err := godotenv.Load(); err != nil {
-        log.Println("Note: No .env file found, relying on system environment variables (good for Render).")
+        log.Println("Note: No .env file found.")
     }
 
     token := os.Getenv("DISCORD_BOT_TOKEN")
     port := os.Getenv("PORT") 
     dbPath := os.Getenv("DB_PATH")
 
-    if token == "" {
-        log.Fatal("FATAL: DISCORD_BOT_TOKEN environment variable not set.")
-    }
-    if dbPath == "" {
-        dbPath = "bot_memory.db" // Default if not set in .env
-    }
+    if token == "" { log.Fatal("FATAL: DISCORD_BOT_TOKEN not set.") }
+    if dbPath == "" { dbPath = "bot_memory.db" }
 
-    // 2. Initialize BoltDB for global memory
     db.InitDB(dbPath) 
 
-    // 3. Create Discord Session
     dg, err := discordgo.New("Bot " + token)
-    if err != nil {
-        log.Fatalf("FATAL: Error creating Discord session: %v", err)
+    if err != nil { log.Fatalf("FATAL: Error creating Discord session: %v", err) }
+
+    // 1. Load and Set Saved Status
+    initialStatus := db.LoadStatus()
+    if initialStatus != nil {
+        dg.UpdateStatusComplex(*initialStatus)
     }
 
-    // Required intents to read message content
+    // 2. Register Handlers
+    dg.AddHandler(handler.MessageCreate(dg)) // AI Chat Handler
+    dg.AddHandler(handler.InteractionCreate) // NEW: UI/Slash Command Handler
+
     dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
 
-    // 4. Register Message Handler
-    dg.AddHandler(handler.MessageCreate(dg))
-
-    // 5. Open Discord connection
     if err = dg.Open(); err != nil {
-        log.Fatalf("FATAL: Error opening Discord connection: %v", err)
+        log.Fatalf("FATAL: Error opening connection: %v", err)
     }
-    log.Println("✅ Bot is running and connected to Discord.")
     
-    // 6. Start HTTP server to satisfy Render's requirement to bind to a port
-    if port == "" {
-        port = "8080"
+    // 3. REGISTER SLASH COMMANDS
+    // We register them globally (might take up to an hour to appear, 
+    // strictly for development you can pass a Guild ID as the second arg instead of "")
+    log.Println("Registering slash commands...")
+    commands := []*discordgo.ApplicationCommand{
+        {
+            Name:        "config",
+            Description: "Open the UI to edit Bot Status, Activity, and RPC Assets",
+        },
+        {
+            Name:        "personality",
+            Description: "Open the UI to edit the AI Personality",
+        },
     }
 
-    // Simple health check endpoint
+    for _, v := range commands {
+        _, err := dg.ApplicationCommandCreate(dg.State.User.ID, "", v)
+        if err != nil {
+            log.Panicf("Cannot create '%v' command: %v", v.Name, err)
+        }
+    }
+
+    log.Println("✅ Bot is running with Slash Commands active.")
+    
+    if port == "" { port = "8080" }
     http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintf(w, "Discord Bot is running and healthy.")
+        fmt.Fprintf(w, "Discord Bot is running.")
     })
-
-    log.Printf("🌍 Starting HTTP server on port %s for Render health check...", port)
-    // This blocks indefinitely, keeping the Go program and the bot alive.
     log.Fatal(http.ListenAndServe(":"+port, nil))
-
-    // Note: The defer dg.Close() will never be reached in normal operation
-    // because log.Fatal(http.ListenAndServe) will exit the process.
 }
