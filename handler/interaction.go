@@ -65,7 +65,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 								{
 									Label: "Edit Images and Streaming Link",
 									Value: "select_assets",
-									Description: "Set Large/Small Assets, Tooltip Text, and RPC Buttons.",
+									Description: "Set Large/Small Assets, Tooltip Text, and Streaming URL.",
 								},
 								{
 									Label: "Apply All Changes (Update Status)",
@@ -126,7 +126,7 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			selectedValue = data.Values[0]
 		}
 	} else {
-		// Fallback for non-select menu components (like button_apply_status if we put it back)
+		// Fallback for non-select menu components
 		selectedValue = data.CustomID
 	}
 
@@ -187,17 +187,12 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 	case "select_assets":
-		// Open Modal for Images and Streaming Link (including RPC buttons)
+		// Open Modal for Images and Streaming Link (RPC Buttons REMOVED for v0.27.1 compatibility)
 		largeKey := ""
 		largeText := ""
 		smallKey := ""
 		smallText := ""
 		streamingURL := ""
-		
-		button1Label := ""
-		button1URL := ""
-		button2Label := ""
-		button2URL := ""
 
 		// Check for existing assets
 		if currentActivity != nil && currentActivity.Assets.LargeImageID != "" {
@@ -208,23 +203,11 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 		if currentActivity != nil {
 			streamingURL = currentActivity.URL
-
-			// Load existing RPC buttons for pre-filling
-			if currentActivity.Buttons != nil {
-				if len(currentActivity.Buttons) > 0 {
-					button1Label = currentActivity.Buttons[0].Label
-					button1URL = currentActivity.Buttons[0].URL
-				}
-				if len(currentActivity.Buttons) > 1 {
-					button2Label = currentActivity.Buttons[1].Label
-					button2URL = currentActivity.Buttons[1].URL
-				}
-			}
 		}
 
 		modal := discordgo.InteractionResponseData{
 			CustomID: modalIDAssets,
-			Title:    "Images & Streaming Link (and RPC Buttons)",
+			Title:    "Images & Streaming Link",
 			Components: []discordgo.MessageComponent{
 				// Row 1: Large Image Key
 				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
@@ -245,22 +228,6 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				// Row 5: Streaming URL (Used only if type is 'streaming')
 				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 					discordgo.TextInput{CustomID: "url_input", Label: "Streaming URL (Twitch/YouTube Link)", Style: discordgo.TextInputShort, Placeholder: "Only used if Activity Type is streaming.", Required: false, MaxLength: 100, Value: streamingURL},
-				}},
-				// Row 6: RPC Button 1 Label (NEW)
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{CustomID: "rpc_btn1_label", Label: "RPC Button 1 Label (Max 32 Chars)", Style: discordgo.TextInputShort, Placeholder: "Optional (e.g., 'View on Website')", Required: false, MaxLength: 32, Value: button1Label},
-				}},
-				// Row 7: RPC Button 1 URL (NEW)
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{CustomID: "rpc_btn1_url", Label: "RPC Button 1 URL (http/https required)", Style: discordgo.TextInputShort, Placeholder: "Optional (Must be a valid URL)", Required: false, MaxLength: 256, Value: button1URL},
-				}},
-				// Row 8: RPC Button 2 Label (NEW)
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{CustomID: "rpc_btn2_label", Label: "RPC Button 2 Label (Max 32 Chars)", Style: discordgo.TextInputShort, Placeholder: "Optional", Required: false, MaxLength: 32, Value: button2Label},
-				}},
-				// Row 9: RPC Button 2 URL (NEW)
-				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{CustomID: "rpc_btn2_url", Label: "RPC Button 2 URL (http/https required)", Style: discordgo.TextInputShort, Placeholder: "Optional (Must be a valid URL)", Required: false, MaxLength: 256, Value: button2URL},
 				}},
 			},
 		}
@@ -318,18 +285,12 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 	case modalIDAssets:
-		// Save Assets and URL (Components 0-4)
+		// Save Assets and URL (Components 0-4) (RPC Buttons REMOVED)
 		largeKey := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		largeText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		smallKey := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		smallText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		url := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-
-		// Save RPC Button Data (Components 5-8) (NEW LOGIC)
-		rpcBtn1Label := data.Components[5].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		rpcBtn1URL := data.Components[6].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		rpcBtn2Label := data.Components[7].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		rpcBtn2URL := data.Components[8].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
 		// Update Assets (v0.27.1 compatible structure)
 		activity.Assets = discordgo.Assets{
@@ -339,29 +300,10 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			SmallText:    smallText,
 		}
 		activity.URL = url
-
-		// Build the RPC Buttons slice (Discord supports a max of 2 buttons)
-		activity.Buttons = make([]discordgo.ActivityButton, 0, 2)
-		
-		if rpcBtn1Label != "" && rpcBtn1URL != "" {
-			activity.Buttons = append(activity.Buttons, discordgo.ActivityButton{
-				Label: rpcBtn1Label,
-				URL:   rpcBtn1URL,
-			})
-		}
-
-		if rpcBtn2Label != "" && rpcBtn2URL != "" {
-			// Only append if we have space left (max 2 buttons)
-			if len(activity.Buttons) < 2 {
-				activity.Buttons = append(activity.Buttons, discordgo.ActivityButton{
-					Label: rpcBtn2Label,
-					URL:   rpcBtn2URL,
-				})
-			}
-		}
+		// NOTE: activity.Buttons is left alone/ignored, as v0.27.1 does not support it.
 
 		db.SaveStatus(*currentStatus)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "Images/URL & RPC Buttons Saved! Use the Select Menu to 'Apply All Changes'."}})
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "Images/URL Saved! Use the Select Menu to 'Apply All Changes'."}})
 		if err != nil {
 			log.Printf("Error responding to modal submission (Assets): %v", err)
 		}
