@@ -12,7 +12,6 @@ import (
 // --- Command and Component IDs ---
 const modalIDGeneral = "modal_general_config"
 const modalIDAssets = "modal_assets_config"
-// modalIDButtons removed
 // --- END IDs ---
 
 // InteractionCreate handles all slash commands and component/modal submissions
@@ -33,40 +32,57 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
     switch name {
     case "config":
-        // Opens the RPC Main Menu
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-            Type: discordgo.InteractionResponseChannelMessageWithSource,
+        // 1. IMMEDIATELY DEFER to acknowledge the command within 3 seconds.
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+            Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
             Data: &discordgo.InteractionResponseData{
-                Content: "⚙️ **RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
-                Flags:   discordgo.MessageFlagsEphemeral,
-                Components: []discordgo.MessageComponent{
-                    discordgo.ActionsRow{
-                        Components: []discordgo.MessageComponent{
-                            discordgo.Button{
-                                CustomID: "button_general_status",
-                                Label:    "General Status & Activity",
-                                Style:    discordgo.PrimaryButton,
-                            },
-                            discordgo.Button{
-                                CustomID: "button_assets",
-                                Label:    "Images & Streaming Link",
-                                Style:    discordgo.SecondaryButton,
-                            },
-                            // Button for buttons is removed
-                            discordgo.Button{
-                                CustomID: "button_apply_status",
-                                Label:    "✅ Apply All Changes",
-                                Style:    discordgo.SuccessButton,
-                            },
+                Flags: discordgo.MessageFlagsEphemeral,
+            },
+        })
+
+        if err != nil {
+            // Log this failure, as the interaction is not acknowledged at all.
+            log.Printf("CRITICAL: Error deferring /config command. Bot failed to respond in time: %v", err)
+            return
+        }
+
+        // 2. Send the actual config menu as a FOLLOWUP message.
+        // We use FollowupMessageCreate after deferral.
+        _, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+            Content: "⚙️ **RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
+            Components: []discordgo.MessageComponent{
+                discordgo.ActionsRow{
+                    Components: []discordgo.MessageComponent{
+                        discordgo.Button{
+                            CustomID: "button_general_status",
+                            Label:    "General Status & Activity",
+                            Style:    discordgo.PrimaryButton,
+                        },
+                        discordgo.Button{
+                            CustomID: "button_assets",
+                            Label:    "Images & Streaming Link",
+                            Style:    discordgo.SecondaryButton,
+                        },
+                        discordgo.Button{
+                            CustomID: "button_apply_status",
+                            Label:    "✅ Apply All Changes",
+                            Style:    discordgo.SuccessButton,
                         },
                     },
                 },
             },
+            Flags: discordgo.MessageFlagsEphemeral,
         })
 
+        if err != nil {
+            // Log the failure to send the menu. This is likely the root cause of the user seeing no response.
+            log.Printf("ERROR: Failed to send /config followup message (menu): %v", err)
+        }
+
+
     case "personality":
-        // Opens the Personality Modal
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+        // Opens the Personality Modal (This is a direct modal response, no deferral needed)
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseModal,
             Data: &discordgo.InteractionResponseData{
                 CustomID: "personality_modal",
@@ -87,6 +103,11 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                 },
             },
         })
+        
+        if err != nil {
+            log.Printf("Error responding to /personality command: %v", err)
+            return
+        }
     }
 }
 
@@ -144,7 +165,10 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
                 }},
             },
         }
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
+        if err != nil {
+             log.Printf("Error responding to component modal (General): %v", err)
+        }
 
     case "button_assets":
         // Open Modal for Images and Streaming Link
@@ -191,9 +215,10 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
                 }},
             },
         }
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
-
-    // case "button_buttons" is removed
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
+        if err != nil {
+             log.Printf("Error responding to component modal (Assets): %v", err)
+        }
 
     case "button_apply_status":
         // This button triggers the final status update using the consolidated data
@@ -238,7 +263,10 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         
         db.SaveStatus(*currentStatus)
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
+        if err != nil {
+             log.Printf("Error responding to modal submission (General): %v", err)
+        }
 
     case modalIDAssets:
         // Save Assets and URL
@@ -258,22 +286,25 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         activity.URL = url
         
         db.SaveStatus(*currentStatus)
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
+        if err != nil {
+             log.Printf("Error responding to modal submission (Assets): %v", err)
+        }
 
-    // case modalIDButtons is removed
-    
-    // --- OTHER MODALS ---
     case "personality_modal":
         // Personality modal submission
         newPersonality := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         db.SavePersonality(newPersonality)
-        s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseChannelMessageWithSource,
             Data: &discordgo.InteractionResponseData{
                 Content: "✅ **Personality Updated!**",
                 Flags:   discordgo.MessageFlagsEphemeral,
             },
         })
+        if err != nil {
+             log.Printf("Error responding to modal submission (Personality): %v", err)
+        }
     }
 }
 
