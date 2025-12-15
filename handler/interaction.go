@@ -1,7 +1,6 @@
 package handler
 
 import (
-    "fmt"
     "log"
     "strings"
 
@@ -141,11 +140,11 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         }
 
         // Construct Assets if key provided
-        var assets *discordgo.ActivityAssets
+        var assets discordgo.Assets // FIXED: Correct Type Name
         if assetKey != "" {
-            assets = &discordgo.ActivityAssets{
-                LargeImage: assetKey,
-                LargeText:  activityText,
+            assets = discordgo.Assets{ // FIXED: Correct Type Name
+                LargeImageID: assetKey, // FIXED: Field is LargeImageID, not LargeImage
+                LargeText:    activityText,
             }
         }
 
