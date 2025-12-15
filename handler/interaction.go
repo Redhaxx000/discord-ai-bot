@@ -12,6 +12,7 @@ import (
 // --- Command and Component IDs ---
 const modalIDGeneral = "modal_general_config"
 const modalIDAssets = "modal_assets_config"
+const selectMenuID = "select_config_option" // ID for the Select Menu
 
 // --- END IDs ---
 
@@ -42,24 +43,49 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 
 		if err != nil {
-			log.Printf("CRITICAL: Error deferring /config command. Bot failed to respond in time: %v", err)
+			log.Printf("CRITICAL: Error deferring /config command: %v", err)
 			return
 		}
 
-		// TEMPORARY TEST: Send a simple text message with NO components.
-		// This tests if the FollowupMessageCreate works without the problematic buttons.
+		// 2. Send the actual config menu as a FOLLOWUP message, using a Select Menu.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: "**SUCCESS!** The deferral worked. Buttons are currently disabled for testing.",
+			Content: "**RPC Configuration Menu**\n\nSelect the configuration section you wish to edit or apply changes:",
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.SelectMenu{
+							CustomID:    selectMenuID,
+							Placeholder: "Choose a configuration action...",
+							Options: []discordgo.SelectMenuOption{
+								{
+									Label: "Edit General Status & Activity",
+									Value: "select_general_status",
+									Description: "Set Discord Status, Activity Type, Name, and Details.",
+								},
+								{
+									Label: "Edit Images and Streaming Link",
+									Value: "select_assets",
+									Description: "Set Large/Small Assets, Tooltip Text, and RPC Buttons.",
+								},
+								{
+									Label: "Apply All Changes (Update Status)",
+									Value: "select_apply_status",
+									Description: "Save and immediately push all saved settings to Discord.",
+								},
+							},
+						},
+					},
+				},
+			},
 			Flags: discordgo.MessageFlagsEphemeral,
 		})
 
 		if err != nil {
-			// If this fails, the problem is not the buttons, but the Followup function itself.
-			log.Printf("CRITICAL ERROR: Failed to send simple /config followup message: %v", err)
+			log.Printf("ERROR: Failed to send /config followup message (menu): %v", err)
 		}
 
 	case "personality":
-		// Opens the Personality Modal (This is a direct modal response, no deferral needed)
+		// Opens the Personality Modal
 		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseModal,
 			Data: &discordgo.InteractionResponseData{
@@ -89,11 +115,23 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// 2. Handle Button Clicks -> Open Specific Modals (handlers remain intact)
+// 2. Handle Component Interactions (Select Menu and future components)
 func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.MessageComponentData()
-	currentStatusData := db.LoadStatus()
+	
+	// Determine the selected value, whether it's from the Select Menu or a direct button click (if any added later)
+	var selectedValue string
+	if data.CustomID == selectMenuID {
+		if len(data.Values) > 0 {
+			selectedValue = data.Values[0]
+		}
+	} else {
+		// Fallback for non-select menu components (like button_apply_status if we put it back)
+		selectedValue = data.CustomID
+	}
 
+	// Load status data for pre-filling modals or applying status
+	currentStatusData := db.LoadStatus()
 	var currentActivity *discordgo.Activity
 	if currentStatusData != nil {
 		for _, act := range currentStatusData.Activities {
@@ -104,8 +142,8 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 	}
 
-	switch data.CustomID {
-	case "button_general_status":
+	switch selectedValue {
+	case "select_general_status":
 		// Open Modal for Status, Type, Name, Details
 		statusText := ""
 		activityTypeStr := "playing"
@@ -148,15 +186,20 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			log.Printf("Error responding to component modal (General): %v", err)
 		}
 
-	case "button_assets":
-		// Open Modal for Images and Streaming Link
+	case "select_assets":
+		// Open Modal for Images and Streaming Link (including RPC buttons)
 		largeKey := ""
 		largeText := ""
 		smallKey := ""
 		smallText := ""
 		streamingURL := ""
+		
+		button1Label := ""
+		button1URL := ""
+		button2Label := ""
+		button2URL := ""
 
-		// Check for empty string, not nil, as Assets is a struct
+		// Check for existing assets
 		if currentActivity != nil && currentActivity.Assets.LargeImageID != "" {
 			largeKey = currentActivity.Assets.LargeImageID
 			largeText = currentActivity.Assets.LargeText
@@ -165,11 +208,23 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 		if currentActivity != nil {
 			streamingURL = currentActivity.URL
+
+			// Load existing RPC buttons for pre-filling
+			if currentActivity.Buttons != nil {
+				if len(currentActivity.Buttons) > 0 {
+					button1Label = currentActivity.Buttons[0].Label
+					button1URL = currentActivity.Buttons[0].URL
+				}
+				if len(currentActivity.Buttons) > 1 {
+					button2Label = currentActivity.Buttons[1].Label
+					button2URL = currentActivity.Buttons[1].URL
+				}
+			}
 		}
 
 		modal := discordgo.InteractionResponseData{
 			CustomID: modalIDAssets,
-			Title:    "Images & Streaming Link",
+			Title:    "Images & Streaming Link (and RPC Buttons)",
 			Components: []discordgo.MessageComponent{
 				// Row 1: Large Image Key
 				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
@@ -191,6 +246,22 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 					discordgo.TextInput{CustomID: "url_input", Label: "Streaming URL (Twitch/YouTube Link)", Style: discordgo.TextInputShort, Placeholder: "Only used if Activity Type is streaming.", Required: false, MaxLength: 100, Value: streamingURL},
 				}},
+				// Row 6: RPC Button 1 Label (NEW)
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "rpc_btn1_label", Label: "RPC Button 1 Label (Max 32 Chars)", Style: discordgo.TextInputShort, Placeholder: "Optional (e.g., 'View on Website')", Required: false, MaxLength: 32, Value: button1Label},
+				}},
+				// Row 7: RPC Button 1 URL (NEW)
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "rpc_btn1_url", Label: "RPC Button 1 URL (http/https required)", Style: discordgo.TextInputShort, Placeholder: "Optional (Must be a valid URL)", Required: false, MaxLength: 256, Value: button1URL},
+				}},
+				// Row 8: RPC Button 2 Label (NEW)
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "rpc_btn2_label", Label: "RPC Button 2 Label (Max 32 Chars)", Style: discordgo.TextInputShort, Placeholder: "Optional", Required: false, MaxLength: 32, Value: button2Label},
+				}},
+				// Row 9: RPC Button 2 URL (NEW)
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "rpc_btn2_url", Label: "RPC Button 2 URL (http/https required)", Style: discordgo.TextInputShort, Placeholder: "Optional (Must be a valid URL)", Required: false, MaxLength: 256, Value: button2URL},
+				}},
 			},
 		}
 		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
@@ -198,8 +269,8 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			log.Printf("Error responding to component modal (Assets): %v", err)
 		}
 
-	case "button_apply_status":
-		// This button triggers the final status update using the consolidated data
+	case "select_apply_status":
+		// This option triggers the final status update
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseDeferredMessageUpdate,
 		})
@@ -234,25 +305,31 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	switch data.CustomID {
 	case modalIDGeneral:
-		// Save General Status Data
+		// Save General Status Data (Components 0-3)
 		currentStatus.Status = strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
 		activity.Type = stringToActivityType(strings.ToLower(data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value))
 		activity.Name = data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
 		db.SaveStatus(*currentStatus)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "General Activity Saved! Click 'Apply All Changes' to update Discord."}})
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "General Activity Saved! Use the Select Menu to 'Apply All Changes'."}})
 		if err != nil {
 			log.Printf("Error responding to modal submission (General): %v", err)
 		}
 
 	case modalIDAssets:
-		// Save Assets and URL
+		// Save Assets and URL (Components 0-4)
 		largeKey := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		largeText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		smallKey := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		smallText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		url := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+
+		// Save RPC Button Data (Components 5-8) (NEW LOGIC)
+		rpcBtn1Label := data.Components[5].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		rpcBtn1URL := data.Components[6].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		rpcBtn2Label := data.Components[7].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		rpcBtn2URL := data.Components[8].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
 		// Update Assets (v0.27.1 compatible structure)
 		activity.Assets = discordgo.Assets{
@@ -263,8 +340,28 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 		activity.URL = url
 
+		// Build the RPC Buttons slice (Discord supports a max of 2 buttons)
+		activity.Buttons = make([]discordgo.ActivityButton, 0, 2)
+		
+		if rpcBtn1Label != "" && rpcBtn1URL != "" {
+			activity.Buttons = append(activity.Buttons, discordgo.ActivityButton{
+				Label: rpcBtn1Label,
+				URL:   rpcBtn1URL,
+			})
+		}
+
+		if rpcBtn2Label != "" && rpcBtn2URL != "" {
+			// Only append if we have space left (max 2 buttons)
+			if len(activity.Buttons) < 2 {
+				activity.Buttons = append(activity.Buttons, discordgo.ActivityButton{
+					Label: rpcBtn2Label,
+					URL:   rpcBtn2URL,
+				})
+			}
+		}
+
 		db.SaveStatus(*currentStatus)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "Images/URL Saved! Click 'Apply All Changes' to update Discord."}})
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "Images/URL & RPC Buttons Saved! Use the Select Menu to 'Apply All Changes'."}})
 		if err != nil {
 			log.Printf("Error responding to modal submission (Assets): %v", err)
 		}
