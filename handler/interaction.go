@@ -13,7 +13,6 @@ import (
 const modalIDGeneral = "modal_general_config"
 const modalIDAssets = "modal_assets_config"
 const modalIDButtons = "modal_buttons_config"
-const menuIDMain = "menu_rpc_main"
 // --- END IDs ---
 
 // InteractionCreate handles all slash commands and component/modal submissions
@@ -70,7 +69,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
         })
 
     case "personality":
-        // ... (Personality Modal remains the same) ...
+        // Opens the Personality Modal
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseModal,
             Data: &discordgo.InteractionResponseData{
@@ -199,12 +198,7 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
 
     case "button_buttons":
-        // Open Modal for Buttons (Limited to 2 buttons)
-        
-        // This is complex as it requires 4 fields (2 pairs of label/url)
-        // For simplicity in the modal, we'll only allow one button for now.
-        // Expanding to two would violate the 5-row modal limit if we needed 4 inputs.
-        
+        // Open Modal for Buttons (Max 1)
         btnLabel := ""
         btnURL := ""
         if currentActivity != nil && len(currentActivity.Buttons) > 0 {
@@ -256,14 +250,15 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         }
     }
     if activity == nil {
-        // If no activity exists, create a default one
+        // If no activity exists, create a default one and append it
         activity = &discordgo.Activity{Type: discordgo.ActivityTypeGame, Name: "Updating..."}
         currentStatus.Activities = append(currentStatus.Activities, activity)
     }
 
     // --- MODAL SUBMISSION LOGIC ---
-
-    if data.CustomID == modalIDGeneral {
+    
+    switch data.CustomID {
+    case modalIDGeneral:
         // Save General Status Data
         currentStatus.Status = strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
         activity.Type = stringToActivityType(strings.ToLower(data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value))
@@ -273,7 +268,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         db.SaveStatus(*currentStatus)
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
 
-    } else if data.CustomID == modalIDAssets {
+    case modalIDAssets:
         // Save Assets and URL
         largeKey := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         largeText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
@@ -293,7 +288,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         db.SaveStatus(*currentStatus)
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
 
-    } else if data.CustomID == modalIDButtons {
+    case modalIDButtons:
         // Save Buttons (Max 1 for simplicity)
         btnLabel := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         btnURL := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
@@ -311,7 +306,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
     // --- OTHER MODALS ---
     case "personality_modal":
-        // ... (Personality modal submission remains the same) ...
+        // Personality modal submission
         newPersonality := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         db.SavePersonality(newPersonality)
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -330,20 +325,13 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func updateStatus(s *discordgo.Session, i *discordgo.InteractionCreate) {
     newData := db.LoadStatus()
     if newData == nil {
-        // Should not happen if data was saved, but fallback
         s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "❌ Error: No saved status data found."})
         return
     }
 
-    // Since custom status isn't edited in this new component flow, 
-    // we need to re-add it if it was previously set, or add the main activity if it was removed.
-
-    // Ensure the main activity is the second in the list if a custom status (Type 4) exists
-    // The previous SaveStatus logic should handle this structure, we just need to update the Discord API.
-    
     if err := s.UpdateStatusComplex(*newData); err != nil {
         log.Printf("Error updating status: %v", err)
-        s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "❌ **Update Failed!** Check bot logs for details."})
+        s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "❌ **Update Failed!** Check bot logs for details. (Ensure Activity Name is set and Assets are valid keys)"})
         return
     }
 
@@ -363,8 +351,6 @@ func activityTypeToString(t discordgo.ActivityType) string {
         return "watching"
     case discordgo.ActivityTypeCompeting:
         return "competing"
-    case discordgo.ActivityTypeCustom:
-        return "custom" // Should be handled separately
     default:
         return "playing"
     }
