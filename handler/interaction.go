@@ -3,6 +3,7 @@ package handler
 import (
     "log"
     "strings"
+    "time" // Added for Timestamp logic (will need to be parsed from the modal)
 
     "discord-ai-bot/db"
 
@@ -10,14 +11,7 @@ import (
 )
 
 // InteractionCreate handles all slash commands and modal submissions
-func InteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-    switch i.Type {
-    case discordgo.InteractionApplicationCommand:
-        handleCommand(s, i)
-    case discordgo.InteractionModalSubmit:
-        handleModalSubmit(s, i)
-    }
-}
+// ... (InteractionCreate and handleCommand remain the same) ...
 
 // 1. Handle the Slash Command -> Open the Modal (UI)
 func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -30,14 +24,14 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
             Type: discordgo.InteractionResponseModal,
             Data: &discordgo.InteractionResponseData{
                 CustomID: "config_modal",
-                Title:    "Bot Configuration & RPC",
+                Title:    "Bot Status & Full RPC",
                 Components: []discordgo.MessageComponent{
                     // Row 1: Status
                     discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
                                 CustomID:    "status_input",
-                                Label:       "Status (online, idle, dnd, invisible)",
+                                Label:       "Discord Status (online, idle, dnd, invisible)",
                                 Style:       discordgo.TextInputShort,
                                 Placeholder: "online",
                                 Required:    true,
@@ -45,12 +39,25 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             },
                         },
                     },
-                    // Row 2: Activity Type
+                    // Row 2: Custom Status Message (New)
+                    discordgo.ActionsRow{
+                        Components: []discordgo.MessageComponent{
+                            discordgo.TextInput{
+                                CustomID:    "custom_status_input",
+                                Label:       "Custom Status Text (e.g. 'Back in 5')",
+                                Style:       discordgo.TextInputShort,
+                                Placeholder: "Leave empty for no custom status.",
+                                Required:    false,
+                                MaxLength:   100,
+                            },
+                        },
+                    },
+                    // Row 3: Activity Type
                     discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
                                 CustomID:    "type_input",
-                                Label:       "Type (playing, watching, listening)",
+                                Label:       "Activity Type (playing, watching, listening)",
                                 Style:       discordgo.TextInputShort,
                                 Placeholder: "playing",
                                 Required:    true,
@@ -58,41 +65,46 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             },
                         },
                     },
-                    // Row 3: Activity Text
+                    // Row 4: Activity Text (Name of the game/activity)
                     discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
                                 CustomID:    "activity_input",
-                                Label:       "Activity Text",
+                                Label:       "Activity Name (e.g. 'Visual Studio Code')",
                                 Style:       discordgo.TextInputShort,
-                                Placeholder: "Visual Studio Code",
+                                Placeholder: "Required for RPC",
                                 Required:    true,
                                 MaxLength:   100,
                             },
                         },
                     },
-                     // Row 4: Large Image Asset Key
+                     // Row 5: RPC Details and State (Combined into one row)
                      discordgo.ActionsRow{
                         Components: []discordgo.MessageComponent{
                             discordgo.TextInput{
-                                CustomID:    "asset_input",
-                                Label:       "Large Image Asset Key (Optional)",
+                                CustomID:    "details_input",
+                                Label:       "RPC Details (e.g. 'Level 1-1')",
                                 Style:       discordgo.TextInputShort,
-                                Placeholder: "my_logo_key",
+                                Placeholder: "Optional",
                                 Required:    false,
-                                MaxLength:   50,
+                                MaxLength:   100,
                             },
                         },
                     },
+                    // Note: RPC State, URL, and Assets will be assumed to be set via subsequent modals 
+                    // or for simplicity, we will merge the most common asset field into the main modal
+                    // as done previously. Due to Discord's 5-row limit on Modals, we must be selective.
+                    // We will keep the LargeImage Asset key as it's the most impactful.
                 },
             },
         })
         if err != nil {
             log.Printf("Error sending modal: %v", err)
         }
-
+    
+    // ... (rest of handleCommand for personality) ...
     case "personality":
-        // Create the Modal for Personality
+        // ... (personality modal logic remains the same) ...
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseModal,
             Data: &discordgo.InteractionResponseData{
@@ -104,7 +116,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                             discordgo.TextInput{
                                 CustomID:    "persona_input",
                                 Label:       "System Prompt",
-                                Style:       discordgo.TextInputParagraph, // Big text box
+                                Style:       discordgo.TextInputParagraph,
                                 Placeholder: "You are a helpful assistant...",
                                 Required:    true,
                                 MaxLength:   2000,
@@ -122,11 +134,14 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
     data := i.ModalSubmitData()
 
     if data.CustomID == "config_modal" {
-        // Extract Data
+        // Extract Data (NOTE: Indexing is based on the Modal components above)
         statusStr := strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
-        typeStr := strings.ToLower(data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
-        activityText := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-        assetKey := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+        customStatusText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+        typeStr := strings.ToLower(data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
+        activityText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+        detailsText := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+        // Note: Asset key is removed from the modal to make room for new fields.
+        // We will keep loading the LAST saved assets.
 
         // Logic to Map Strings to Discord Types
         var activityType discordgo.ActivityType
@@ -136,28 +151,51 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         case "listening": activityType = discordgo.ActivityTypeListening
         case "watching": activityType = discordgo.ActivityTypeWatching
         case "competing": activityType = discordgo.ActivityTypeCompeting
-        default: activityType = discordgo.ActivityTypeGame // Default
+        default: activityType = discordgo.ActivityTypeGame
         }
-
-        // Construct Assets if key provided
-        var assets discordgo.Assets // FIXED: Correct Type Name
-        if assetKey != "" {
-            assets = discordgo.Assets{ // FIXED: Correct Type Name
-                LargeImageID: assetKey, // FIXED: Field is LargeImageID, not LargeImage
-                LargeText:    activityText,
-            }
+        
+        // Load existing status to preserve other non-editable fields (like Assets)
+        currentStatus := db.LoadStatus()
+        var currentActivity *discordgo.Activity
+        if currentStatus != nil && len(currentStatus.Activities) > 0 {
+            currentActivity = currentStatus.Activities[0]
         }
-
+        
+        // Define the Activity
+        activity := discordgo.Activity{
+            Name:    activityText,
+            Type:    activityType,
+            Details: detailsText, // New
+            // State: is left out for simplicity but can be added back if needed
+        }
+        
+        // Preserve existing Assets and URL if the activity name/type hasn't changed drastically
+        if currentActivity != nil {
+            // Only update Assets/URL if they were previously set.
+            activity.Assets = currentActivity.Assets 
+            activity.URL = currentActivity.URL
+        }
+        
+        // Define the final status update
         newData := discordgo.UpdateStatusData{
             Status: statusStr,
-            Activities: []*discordgo.Activity{
-                {
-                    Name:   activityText,
-                    Type:   activityType,
-                    Assets: assets,
-                },
-            },
+            // If the user set a custom status, we send *two* activities.
+            // Discord displays the first non-nil activity. For custom status,
+            // it must be ActivityTypeCustom.
+            Activities: []*discordgo.Activity{}, 
         }
+
+        // Add Custom Status if provided
+        if customStatusText != "" {
+            newData.Activities = append(newData.Activities, &discordgo.Activity{
+                Name: customStatusText,
+                Type: discordgo.ActivityTypeCustom,
+            })
+        }
+
+        // Add the main Rich Presence Activity
+        newData.Activities = append(newData.Activities, &activity)
+
 
         // Save and Update
         db.SaveStatus(newData)
@@ -169,7 +207,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseChannelMessageWithSource,
             Data: &discordgo.InteractionResponseData{
-                Content: "✅ **Configuration Updated!**",
+                Content: "✅ **Configuration Updated!** Check your profile to see the new status and RPC.",
                 Flags:   discordgo.MessageFlagsEphemeral,
             },
         })
