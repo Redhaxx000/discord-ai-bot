@@ -12,10 +12,10 @@ import (
 // --- Command and Component IDs ---
 const modalIDGeneral = "modal_general_config"
 const modalIDAssets = "modal_assets_config"
-// Custom IDs for the buttons (replacing the Select Menu ID)
+// Custom IDs for the buttons
 const buttonIDGeneral = "button_general_config"
 const buttonIDAssets = "button_assets_config"
-const buttonIDApply = "button_apply_status" 
+// buttonIDApply has been removed
 
 // --- END IDs ---
 
@@ -31,9 +31,9 @@ func InteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// Define the three button components
+// Define the two remaining button components (Apply removed)
 var configButtons = []discordgo.MessageComponent{
-	// Row 1: The three buttons
+	// Row 1: The two action buttons
 	discordgo.ActionsRow{
 		Components: []discordgo.MessageComponent{
 			discordgo.Button{
@@ -46,11 +46,7 @@ var configButtons = []discordgo.MessageComponent{
 				Style:    discordgo.SecondaryButton,
 				CustomID: buttonIDAssets,
 			},
-			discordgo.Button{
-				Label:    "Apply Changes (Update RPC)",
-				Style:    discordgo.SuccessButton,
-				CustomID: buttonIDApply,
-			},
+			// The Apply button is removed as updates are now automatic
 		},
 	},
 }
@@ -77,7 +73,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 		// 2. Send the actual config menu as a FOLLOWUP message, using the Buttons.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content:    "**RPC Configuration Menu**\n\nSelect the configuration section you wish to edit:",
+			Content:    "**RPC Configuration Menu**\n\nSubmit a modal to automatically update your RPC status.",
 			Components: configButtons, // Use the defined buttons
 			Flags:      discordgo.MessageFlagsEphemeral,
 		})
@@ -117,11 +113,11 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// 2. Handle Component Interactions (Now handling the Buttons)
+// 2. Handle Component Interactions (Buttons only)
 func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.MessageComponentData()
 	
-	selectedValue := data.CustomID // CustomID is now the selected value
+	selectedValue := data.CustomID 
 
 	// Load status data for pre-filling modals
 	currentStatusData := db.LoadStatus()
@@ -229,18 +225,11 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			log.Printf("Error responding to component modal (Assets): %v", err)
 		}
 	
-	case buttonIDApply:
-		// This option triggers the final status update
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseDeferredMessageUpdate,
-		})
-
-		// Call the final update function
-		updateStatus(s, i)
+	// Case for buttonIDApply is removed.
 	}
 }
 
-// 3. Handle Modal Submissions -> Saves Data and Applies Status
+// 3. Handle Modal Submissions -> Saves Data and Automatically Applies Status
 func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 
@@ -274,115 +263,4 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		// Save General Status Data (Components 0-3)
 		currentStatus.Status = strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
 		activity.Type = stringToActivityType(strings.ToLower(data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value))
-		activity.Name = data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-
-		db.SaveStatus(*currentStatus)
-		
-		// Update content to reflect save
-		responseUpdate.Content = "General settings saved! Click 'Apply Changes' to update your RPC status."
-		
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
-		if err != nil {
-			log.Printf("Error responding to modal submission (General): %v", err)
-		}
-
-	case modalIDAssets:
-		// Save Assets and URL (Components 0-4)
-		largeKey := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		largeText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		smallKey := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		smallText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		url := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-
-		// Update Assets (v0.27.1 compatible structure)
-		activity.Assets = discordgo.Assets{
-			LargeImageID: largeKey,
-			LargeText:    largeText,
-			SmallImageID: smallKey,
-			SmallText:    smallText,
-		}
-		activity.URL = url
-
-		db.SaveStatus(*currentStatus)
-		
-		// Update content to reflect save
-		responseUpdate.Content = "Images/URL saved! Click 'Apply Changes' to update your RPC status."
-
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
-		if err != nil {
-			log.Printf("Error responding to modal submission (Assets): %v", err)
-		}
-
-	case "personality_modal":
-		// Personality modal submission
-		newPersonality := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
-		db.SavePersonality(newPersonality)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Personality Updated!",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
-		})
-		if err != nil {
-			log.Printf("Error responding to modal submission (Personality): %v", err)
-		}
-	}
-}
-
-// --- HELPER FUNCTIONS ---
-
-// UpdateStatus performs the final update call to Discord
-func updateStatus(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	newData := db.LoadStatus()
-	if newData == nil {
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Error: No saved status data found."})
-		return
-	}
-
-	// This is the call that updates the RPC status on Discord
-	if err := s.UpdateStatusComplex(*newData); err != nil {
-		log.Printf("Error updating status: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Update Failed! Check bot logs for details. (Ensure Activity Name is set and Assets are valid keys)"})
-		return
-	}
-
-	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Full RPC Updated! Changes applied to Discord."})
-}
-
-// Converts activity type constant to string for pre-filling modals
-func activityTypeToString(t discordgo.ActivityType) string {
-	switch t {
-	case discordgo.ActivityTypeGame:
-		return "playing"
-	case discordgo.ActivityTypeStreaming:
-		return "streaming"
-	case discordgo.ActivityTypeListening:
-		return "listening"
-	case discordgo.ActivityTypeWatching:
-		return "watching"
-	case discordgo.ActivityTypeCompeting:
-		return "competing"
-	default:
-		return "playing"
-	}
-}
-
-// Converts string back to activity type constant
-func stringToActivityType(s string) discordgo.ActivityType {
-	switch s {
-	case "playing":
-		return discordgo.ActivityTypeGame
-	case "streaming":
-		return discordgo.ActivityTypeStreaming
-	case "listening":
-		return discordgo.ActivityTypeListening
-	case "watching":
-		return discordgo.ActivityTypeWatching
-	case "competing":
-		return discordgo.ActivityTypeCompeting
-	default:
-		return discordgo.ActivityTypeGame
-	}
-}
+		activity.Name = data.Components[2].(*discord
