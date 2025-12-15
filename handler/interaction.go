@@ -47,7 +47,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		// 2. Send the actual config menu as a FOLLOWUP message.
-		// Emojis removed from Content and Button Labels to fix "Invalid emoji" error (code 50035).
+		// Emojis removed from all components and content.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "**RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
 			Components: []discordgo.MessageComponent{
@@ -264,7 +264,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
 		db.SaveStatus(*currentStatus)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "**General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "General Activity Saved! Click 'Apply All Changes' to update Discord."}})
 		if err != nil {
 			log.Printf("Error responding to modal submission (General): %v", err)
 		}
@@ -287,7 +287,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		activity.URL = url
 
 		db.SaveStatus(*currentStatus)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "**Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "Images/URL Saved! Click 'Apply All Changes' to update Discord."}})
 		if err != nil {
 			log.Printf("Error responding to modal submission (Assets): %v", err)
 		}
@@ -299,7 +299,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: "**Personality Updated!**",
+				Content: "Personality Updated!",
 				Flags:   discordgo.MessageFlagsEphemeral,
 			},
 		})
@@ -315,17 +315,20 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func updateStatus(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	newData := db.LoadStatus()
 	if newData == nil {
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "❌ Error: No saved status data found."})
+		// Removed emoji
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Error: No saved status data found."})
 		return
 	}
 
 	if err := s.UpdateStatusComplex(*newData); err != nil {
 		log.Printf("Error updating status: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "❌ **Update Failed!** Check bot logs for details. (Ensure Activity Name is set and Assets are valid keys)"})
+		// Removed emoji
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Update Failed! Check bot logs for details. (Ensure Activity Name is set and Assets are valid keys)"})
 		return
 	}
 
-	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "🎉 **Full RPC Updated!** Changes applied to Discord."})
+	// Removed emoji
+	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{Content: "Full RPC Updated! Changes applied to Discord."})
 }
 
 // Converts activity type constant to string for pre-filling modals
