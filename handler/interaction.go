@@ -15,9 +15,13 @@ const modalIDAssets = "modal_assets_config"
 // Custom IDs for the buttons
 const buttonIDGeneral = "button_general_config"
 const buttonIDAssets = "button_assets_config"
-// buttonIDApply has been removed as updates are now automatic
 
 // --- END IDs ---
+
+// Generic pointer helper function for strings
+func ptr(s string) *string {
+    return &s
+}
 
 // InteractionCreate handles all slash commands and component/modal submissions
 func InteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -231,7 +235,6 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 
 	// 1. IMMEDIATELY DEFER the response to prevent the "Unknown Interaction" error.
-	// This acknowledges the submission, buying up to 15 minutes for processing.
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
@@ -261,8 +264,10 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	// Base response data for updating the original interaction message
 	responseUpdate := &discordgo.WebhookEdit{
-		Content:    "Configuration Saved, but update result is pending.",
-		Components: configButtons, // RE-INCLUDES THE BUTTONS
+		// FIX: Use ptr helper for Content
+		Content:    ptr("Configuration Saved, but update result is pending."),
+		// FIX: Use address operator (&) for Components
+		Components: &configButtons,
 	}
 	
 	// A placeholder for the final message content
@@ -321,7 +326,6 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		db.SavePersonality(newPersonality)
 		
 		// Use FollowupMessageCreate since this is a separate command interaction (/personality)
-		// and we already deferred the message update earlier.
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "Personality Updated!",
 			Flags:   discordgo.MessageFlagsEphemeral,
@@ -334,7 +338,8 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 	
 	// 2. Edit the original message (from the deferral) with the final status and buttons.
-	responseUpdate.Content = finalMessageContent
+	// FIX: Use ptr helper for the final message content
+	responseUpdate.Content = ptr(finalMessageContent)
 	_, err = s.InteractionResponseEdit(i.Interaction, responseUpdate)
 	if err != nil {
 		log.Printf("Error editing deferred interaction response: %v", err)
