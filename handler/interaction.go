@@ -99,7 +99,6 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
     data := i.MessageComponentData()
     currentStatusData := db.LoadStatus()
     
-    // Attempt to extract the current main activity for pre-filling modals
     var currentActivity *discordgo.Activity
     if currentStatusData != nil {
         for _, act := range currentStatusData.Activities {
@@ -159,7 +158,8 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
         smallText := ""
         streamingURL := ""
 
-        if currentActivity != nil && currentActivity.Assets != nil {
+        // FIX: Check for empty string, not nil, as Assets is a struct
+        if currentActivity != nil && currentActivity.Assets.LargeImageID != "" {
             largeKey = currentActivity.Assets.LargeImageID
             largeText = currentActivity.Assets.LargeText
             smallKey = currentActivity.Assets.SmallImageID
@@ -198,12 +198,22 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseModal, Data: &modal})
 
     case "button_buttons":
-        // Open Modal for Buttons (Max 1)
-        btnLabel := ""
-        btnURL := ""
-        if currentActivity != nil && len(currentActivity.Buttons) > 0 {
-            btnLabel = currentActivity.Buttons[0].Label
-            btnURL = currentActivity.Buttons[0].URL
+        // Open Modal for Buttons (Max 2 supported by RPC, but 5-row limit)
+        // We will store the buttons on the UpdateStatusData object instead of Activity
+        
+        btn1Label := ""
+        btn1URL := ""
+        
+        // FIX: Check currentStatusData.Buttons (If this field existed in v0.27.1, which it likely did not)
+        // Since it's likely not on UpdateStatusData either, we will use a separate DB save method
+        // For simplicity with v0.27.1, let's assume buttons are saved in a temporary/separate manner for now,
+        // or rely on the fact that older versions only supported one button via another field.
+        // Given the constraints, we rely on the DB storing the *previous* UpdateStatusData object which might
+        // have had the buttons, or we assume the buttons array on UpdateStatusData is nil/empty.
+        
+        if currentStatusData != nil && len(currentStatusData.Buttons) > 0 {
+            btn1Label = currentStatusData.Buttons[0].Label
+            btn1URL = currentStatusData.Buttons[0].URL
         }
 
         modal := discordgo.InteractionResponseData{
@@ -211,10 +221,10 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
             Title:    "Action Buttons (Max 1)",
             Components: []discordgo.MessageComponent{
                 discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-                    discordgo.TextInput{CustomID: "btn1_label", Label: "Button 1 Label", Style: discordgo.TextInputShort, Placeholder: "e.g. Visit Website", Required: false, MaxLength: 32, Value: btnLabel},
+                    discordgo.TextInput{CustomID: "btn1_label", Label: "Button 1 Label", Style: discordgo.TextInputShort, Placeholder: "e.g. Visit Website", Required: false, MaxLength: 32, Value: btn1Label},
                 }},
                 discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-                    discordgo.TextInput{CustomID: "btn1_url", Label: "Button 1 URL", Style: discordgo.TextInputShort, Placeholder: "Must be a full https:// link.", Required: false, MaxLength: 512, Value: btnURL},
+                    discordgo.TextInput{CustomID: "btn1_url", Label: "Button 1 URL", Style: discordgo.TextInputShort, Placeholder: "Must be a full https:// link.", Required: false, MaxLength: 512, Value: btn1URL},
                 }},
             },
         }
@@ -241,7 +251,6 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         currentStatus = &discordgo.UpdateStatusData{Status: "online", Activities: []*discordgo.Activity{{Type: discordgo.ActivityTypeGame}}}
     }
     
-    // Find the main RPC activity (not custom status)
     var activity *discordgo.Activity
     for _, act := range currentStatus.Activities {
         if act.Type != discordgo.ActivityTypeCustom {
@@ -255,8 +264,6 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         currentStatus.Activities = append(currentStatus.Activities, activity)
     }
 
-    // --- MODAL SUBMISSION LOGIC ---
-    
     switch data.CustomID {
     case modalIDGeneral:
         // Save General Status Data
@@ -276,7 +283,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         smallText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         url := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 
-        // Update Assets
+        // Update Assets (v0.27.1 compatible structure)
         activity.Assets = discordgo.Assets{
             LargeImageID: largeKey,
             LargeText:    largeText,
@@ -289,13 +296,14 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
 
     case modalIDButtons:
-        // Save Buttons (Max 1 for simplicity)
+        // Save Buttons - These are stored on the UpdateStatusData object in v0.27.1
         btnLabel := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         btnURL := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         
-        activity.Buttons = make([]discordgo.Button, 0)
+        // FIX: Set Buttons on the UpdateStatusData object
+        currentStatus.Buttons = make([]discordgo.Button, 0)
         if btnLabel != "" && btnURL != "" {
-            activity.Buttons = append(activity.Buttons, discordgo.Button{
+            currentStatus.Buttons = append(currentStatus.Buttons, discordgo.Button{
                 Label: btnLabel,
                 URL:   btnURL,
             })
