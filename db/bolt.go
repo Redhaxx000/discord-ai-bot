@@ -2,23 +2,24 @@ package db
 
 import (
     "encoding/json"
-    "log" // <-- ADDED: Needed for log.Fatal/log.Printf
-    "os"  // <-- ADDED: Needed for os.ErrNotExist
-
+    "log"
+    "os"
     "sync"
 
     "discord-ai-bot/ai"
 
     bolt "github.com/boltdb/bolt"
+    "github.com/bwmarrin/discordgo"
 )
 
 var db *bolt.DB
 var once sync.Once
 
 // --- Global Constants ---
-const conversationBucket = "conversations" // <-- DEFINED
-const globalKey = "global_conversation"      // <-- DEFINED
-const personalityKey = "bot_personality"     // <-- DEFINED
+const conversationBucket = "conversations"
+const globalKey = "global_conversation"
+const personalityKey = "bot_personality"
+const statusKey = "bot_status_data" // <-- New key for status
 // ------------------------
 
 // InitDB initializes the BoltDB connection (safe to call multiple times)
@@ -40,6 +41,8 @@ func InitDB(dbPath string) {
         }
     })
 }
+
+// --- CONVERSATION HISTORY ---
 
 // LoadGlobalHistory loads the bot's entire conversation history.
 func LoadGlobalHistory() []ai.Message {
@@ -83,6 +86,8 @@ func SaveGlobalHistory(history []ai.Message) {
     }
 }
 
+// --- PERSONALITY ---
+
 // LoadPersonality loads the bot's system prompt (personality).
 func LoadPersonality() string {
     var personality string
@@ -103,7 +108,7 @@ func LoadPersonality() string {
     }
     // Set a default personality if none is found
     if personality == "" {
-        personality = "You are a helpful AI assistant."
+        personality = "You are a member in a semi toxic discord server named vanir, you use gen alpha terms like ts which means this shit and sybau which means shut your bullshit ass up. you also cuss often and you never reply in paragraphs"
     }
     return personality
 }
@@ -120,5 +125,50 @@ func SavePersonality(personality string) {
     
     if err != nil {
         log.Printf("Error saving personality: %v", err)
+    }
+}
+
+// --- STATUS / RPC ---
+
+// LoadStatus loads the bot's custom status data.
+func LoadStatus() *discordgo.UpdateStatusData {
+    var statusData discordgo.UpdateStatusData
+    err := db.View(func(tx *bolt.Tx) error {
+        b := tx.Bucket([]byte(conversationBucket))
+        if b == nil {
+            return nil
+        }
+        data := b.Get([]byte(statusKey))
+        if data == nil {
+            return nil
+        }
+        return json.Unmarshal(data, &statusData)
+    })
+
+    if err != nil {
+        // Not a critical error, just return nil so the bot starts with default status
+        return nil
+    }
+    return &statusData
+}
+
+// SaveStatus saves the bot's custom status data.
+func SaveStatus(statusData discordgo.UpdateStatusData) {
+    data, err := json.Marshal(statusData)
+    if err != nil {
+        log.Printf("Error marshalling status data: %v", err)
+        return
+    }
+
+    err = db.Update(func(tx *bolt.Tx) error {
+        b := tx.Bucket([]byte(conversationBucket))
+        if b == nil {
+            return os.ErrNotExist
+        }
+        return b.Put([]byte(statusKey), data)
+    })
+    
+    if err != nil {
+        log.Printf("Error saving status: %v", err)
     }
 }
