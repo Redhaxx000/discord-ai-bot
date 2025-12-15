@@ -41,15 +41,14 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
         })
 
         if err != nil {
-            // Log this failure, as the interaction is not acknowledged at all.
             log.Printf("CRITICAL: Error deferring /config command. Bot failed to respond in time: %v", err)
             return
         }
 
         // 2. Send the actual config menu as a FOLLOWUP message.
-        // We use FollowupMessageCreate after deferral.
+        // Emojis removed from Content and Button Labels to fix "Invalid emoji" error (code 50035).
         _, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-            Content: "⚙️ **RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
+            Content: "**RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
             Components: []discordgo.MessageComponent{
                 discordgo.ActionsRow{
                     Components: []discordgo.MessageComponent{
@@ -60,12 +59,12 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
                         },
                         discordgo.Button{
                             CustomID: "button_assets",
-                            Label:    "Images & Streaming Link",
+                            Label:    "Images and Streaming Link", // Label corrected
                             Style:    discordgo.SecondaryButton,
                         },
                         discordgo.Button{
                             CustomID: "button_apply_status",
-                            Label:    "✅ Apply All Changes",
+                            Label:    "Apply All Changes", // Label corrected
                             Style:    discordgo.SuccessButton,
                         },
                     },
@@ -75,7 +74,6 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
         })
 
         if err != nil {
-            // Log the failure to send the menu. This is likely the root cause of the user seeing no response.
             log.Printf("ERROR: Failed to send /config followup message (menu): %v", err)
         }
 
@@ -263,7 +261,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
         
         db.SaveStatus(*currentStatus)
-        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "**General Activity Saved!** Click 'Apply All Changes' to update Discord."}})
         if err != nil {
              log.Printf("Error responding to modal submission (General): %v", err)
         }
@@ -286,7 +284,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         activity.URL = url
         
         db.SaveStatus(*currentStatus)
-        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "✅ **Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
+        err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: &discordgo.InteractionResponseData{Content: "**Images/URL Saved!** Click 'Apply All Changes' to update Discord."}})
         if err != nil {
              log.Printf("Error responding to modal submission (Assets): %v", err)
         }
@@ -298,7 +296,7 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
         err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
             Type: discordgo.InteractionResponseChannelMessageWithSource,
             Data: &discordgo.InteractionResponseData{
-                Content: "✅ **Personality Updated!**",
+                Content: "**Personality Updated!**",
                 Flags:   discordgo.MessageFlagsEphemeral,
             },
         })
