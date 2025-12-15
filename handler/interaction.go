@@ -15,7 +15,7 @@ const modalIDAssets = "modal_assets_config"
 // Custom IDs for the buttons
 const buttonIDGeneral = "button_general_config"
 const buttonIDAssets = "button_assets_config"
-// buttonIDApply has been removed
+// buttonIDApply has been removed as updates are now automatic
 
 // --- END IDs ---
 
@@ -46,7 +46,6 @@ var configButtons = []discordgo.MessageComponent{
 				Style:    discordgo.SecondaryButton,
 				CustomID: buttonIDAssets,
 			},
-			// The Apply button is removed as updates are now automatic
 		},
 	},
 }
@@ -224,8 +223,6 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if err != nil {
 			log.Printf("Error responding to component modal (Assets): %v", err)
 		}
-	
-	// Case for buttonIDApply is removed.
 	}
 }
 
@@ -263,4 +260,109 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		// Save General Status Data (Components 0-3)
 		currentStatus.Status = strings.ToLower(data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value)
 		activity.Type = stringToActivityType(strings.ToLower(data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value))
-		activity.Name = data.Components[2].(*discord
+		activity.Name = data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		activity.Details = data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+
+		db.SaveStatus(*currentStatus)
+		
+		// --- AUTOMATIC STATUS UPDATE ---
+		if err := s.UpdateStatusComplex(*currentStatus); err != nil {
+			log.Printf("Error updating status (General): %v", err)
+			responseUpdate.Content = "General settings saved, but **Status Update FAILED!** Check bot logs for details."
+		} else {
+			responseUpdate.Content = "General settings saved and **Status Updated Successfully!**"
+		}
+		// -------------------------------
+		
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
+		if err != nil {
+			log.Printf("Error responding to modal submission (General): %v", err)
+		}
+
+	case modalIDAssets:
+		// Save Assets and URL (Components 0-4)
+		largeKey := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		largeText := data.Components[1].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		smallKey := data.Components[2].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		smallText := data.Components[3].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		url := data.Components[4].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+
+		// Update Assets (v0.27.1 compatible structure)
+		activity.Assets = discordgo.Assets{
+			LargeImageID: largeKey,
+			LargeText:    largeText,
+			SmallImageID: smallKey,
+			SmallText:    smallText,
+		}
+		activity.URL = url
+
+		db.SaveStatus(*currentStatus)
+		
+		// --- AUTOMATIC STATUS UPDATE ---
+		if err := s.UpdateStatusComplex(*currentStatus); err != nil {
+			log.Printf("Error updating status (Assets): %v", err)
+			responseUpdate.Content = "Images/URL saved, but **Status Update FAILED!** Check bot logs for details. (Ensure Assets are valid keys)"
+		} else {
+			responseUpdate.Content = "Images/URL saved and **Status Updated Successfully!**"
+		}
+		// -------------------------------
+
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
+		if err != nil {
+			log.Printf("Error responding to modal submission (Assets): %v", err)
+		}
+
+	case "personality_modal":
+		// Personality modal submission (no status update needed here)
+		newPersonality := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
+		db.SavePersonality(newPersonality)
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Personality Updated!",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		if err != nil {
+			log.Printf("Error responding to modal submission (Personality): %v", err)
+		}
+	}
+}
+
+// --- HELPER FUNCTIONS ---
+
+// Converts activity type constant to string for pre-filling modals
+func activityTypeToString(t discordgo.ActivityType) string {
+	switch t {
+	case discordgo.ActivityTypeGame:
+		return "playing"
+	case discordgo.ActivityTypeStreaming:
+		return "streaming"
+	case discordgo.ActivityTypeListening:
+		return "listening"
+	case discordgo.ActivityTypeWatching:
+		return "watching"
+	case discordgo.ActivityTypeCompeting:
+		return "competing"
+	default:
+		return "playing"
+	}
+}
+
+// Converts string back to activity type constant
+func stringToActivityType(s string) discordgo.ActivityType {
+	switch s {
+	case "playing":
+		return discordgo.ActivityTypeGame
+	case "streaming":
+		return discordgo.ActivityTypeStreaming
+	case "listening":
+		return discordgo.ActivityTypeListening
+	case "watching":
+		return discordgo.ActivityTypeWatching
+	case "competing":
+		return discordgo.ActivityTypeCompeting
+	default:
+		return discordgo.ActivityTypeGame
+	}
+}
