@@ -230,6 +230,16 @@ func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 
+	// 1. IMMEDIATELY DEFER the response to prevent the "Unknown Interaction" error.
+	// This acknowledges the submission, buying up to 15 minutes for processing.
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	})
+	if err != nil {
+		log.Printf("CRITICAL: Error deferring modal response: %v", err)
+		return
+	}
+
 	// Load current status data to preserve everything not in this modal
 	currentStatus := db.LoadStatus()
 	if currentStatus == nil {
@@ -250,10 +260,13 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	// Base response data for updating the original interaction message
-	responseUpdate := &discordgo.InteractionResponseData{
+	responseUpdate := &discordgo.WebhookEdit{
 		Content:    "Configuration Saved, but update result is pending.",
 		Components: configButtons, // RE-INCLUDES THE BUTTONS
 	}
+	
+	// A placeholder for the final message content
+	var finalMessageContent string
 
 	switch data.CustomID {
 	case modalIDGeneral:
@@ -268,16 +281,11 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		// --- AUTOMATIC STATUS UPDATE ---
 		if err := s.UpdateStatusComplex(*currentStatus); err != nil {
 			log.Printf("Error updating status (General): %v", err)
-			responseUpdate.Content = "General settings saved, but **Status Update FAILED!** Check bot logs for details."
+			finalMessageContent = "General settings saved, but **Status Update FAILED!** Check bot logs for details."
 		} else {
-			responseUpdate.Content = "General settings saved and **Status Updated Successfully!**"
+			finalMessageContent = "General settings saved and **Status Updated Successfully!**"
 		}
 		// -------------------------------
-		
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
-		if err != nil {
-			log.Printf("Error responding to modal submission (General): %v", err)
-		}
 
 	case modalIDAssets:
 		// Save Assets and URL (Components 0-4)
@@ -301,31 +309,35 @@ func handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		// --- AUTOMATIC STATUS UPDATE ---
 		if err := s.UpdateStatusComplex(*currentStatus); err != nil {
 			log.Printf("Error updating status (Assets): %v", err)
-			responseUpdate.Content = "Images/URL saved, but **Status Update FAILED!** Check bot logs for details. (Ensure Assets are valid keys)"
+			finalMessageContent = "Images/URL saved, but **Status Update FAILED!** Check bot logs for details. (Ensure Assets are valid keys)"
 		} else {
-			responseUpdate.Content = "Images/URL saved and **Status Updated Successfully!**"
+			finalMessageContent = "Images/URL saved and **Status Updated Successfully!**"
 		}
 		// -------------------------------
-
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: discordgo.InteractionResponseUpdateMessage, Data: responseUpdate})
-		if err != nil {
-			log.Printf("Error responding to modal submission (Assets): %v", err)
-		}
-
+		
 	case "personality_modal":
-		// Personality modal submission (no status update needed here)
+		// Personality modal submission
 		newPersonality := data.Components[0].(*discordgo.ActionsRow).Components[0].(*discordgo.TextInput).Value
 		db.SavePersonality(newPersonality)
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Personality Updated!",
-				Flags:   discordgo.MessageFlagsEphemeral,
-			},
+		
+		// Use FollowupMessageCreate since this is a separate command interaction (/personality)
+		// and we already deferred the message update earlier.
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "Personality Updated!",
+			Flags:   discordgo.MessageFlagsEphemeral,
 		})
-		if err != nil {
-			log.Printf("Error responding to modal submission (Personality): %v", err)
-		}
+		return // Exit early as the personality modal is handled differently
+
+	default:
+		// Should not happen, but update the message anyway
+		finalMessageContent = "Unknown submission type."
+	}
+	
+	// 2. Edit the original message (from the deferral) with the final status and buttons.
+	responseUpdate.Content = finalMessageContent
+	_, err = s.InteractionResponseEdit(i.Interaction, responseUpdate)
+	if err != nil {
+		log.Printf("Error editing deferred interaction response: %v", err)
 	}
 }
 
