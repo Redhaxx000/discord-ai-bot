@@ -46,42 +46,15 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 
-		// 2. Send the actual config menu as a FOLLOWUP message.
-		// CRITICAL FIX: Setting Emoji: discordgo.ComponentEmoji{} (empty struct) to fix the Go compiler error and the Discord HTTP 400 error.
+		// TEMPORARY TEST: Send a simple text message with NO components.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-			Content: "**RPC Configuration Menu**\n\nSelect the section you wish to edit:\n(Note: Buttons are not supported by your current Discord library version)",
-			Components: []discordgo.MessageComponent{
-				discordgo.ActionsRow{
-					Components: []discordgo.MessageComponent{
-						// Button 1: General Status
-						discordgo.Button{
-							CustomID: "button_general_status",
-							Label:    "General Status & Activity",
-							Style:    discordgo.PrimaryButton,
-							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
-						},
-						// Button 2: Images and Streaming Link
-						discordgo.Button{
-							CustomID: "button_assets",
-							Label:    "Images and Streaming Link",
-							Style:    discordgo.SecondaryButton,
-							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
-						},
-						// Button 3: Apply All Changes
-						discordgo.Button{
-							CustomID: "button_apply_status",
-							Label:    "Apply All Changes",
-							Style:    discordgo.SuccessButton,
-							Emoji:    discordgo.ComponentEmoji{}, // FIX: Use empty struct
-						},
-					},
-				},
-			},
+			Content: "**SUCCESS!** The deferral worked. Buttons are currently disabled for testing.",
 			Flags: discordgo.MessageFlagsEphemeral,
 		})
 
 		if err != nil {
-			log.Printf("ERROR: Failed to send /config followup message (menu): %v", err)
+			// If this fails, the problem is not the buttons, but the Followup function itself.
+			log.Printf("CRITICAL ERROR: Failed to send simple /config followup message: %v", err)
 		}
 
 	case "personality":
@@ -115,7 +88,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// 2. Handle Button Clicks -> Open Specific Modals
+// 2. Handle Button Clicks -> Open Specific Modals (handlers remain intact)
 func handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.MessageComponentData()
 	currentStatusData := db.LoadStatus()
@@ -356,7 +329,6 @@ func stringToActivityType(s string) discordgo.ActivityType {
 		return discordgo.ActivityTypeGame
 	case "streaming":
 		return discordgo.ActivityTypeStreaming
-	case "listening":
 		return discordgo.ActivityTypeListening
 	case "watching":
 		return discordgo.ActivityTypeWatching
