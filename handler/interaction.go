@@ -47,6 +47,7 @@ func handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		// TEMPORARY TEST: Send a simple text message with NO components.
+		// This tests if the FollowupMessageCreate works without the problematic buttons.
 		_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "**SUCCESS!** The deferral worked. Buttons are currently disabled for testing.",
 			Flags: discordgo.MessageFlagsEphemeral,
@@ -329,6 +330,7 @@ func stringToActivityType(s string) discordgo.ActivityType {
 		return discordgo.ActivityTypeGame
 	case "streaming":
 		return discordgo.ActivityTypeStreaming
+	case "listening":
 		return discordgo.ActivityTypeListening
 	case "watching":
 		return discordgo.ActivityTypeWatching
